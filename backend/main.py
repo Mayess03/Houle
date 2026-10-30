@@ -153,6 +153,14 @@ class AlertOut(BaseModel):
     value: float
     threshold: float
 
+class StatsOut(BaseModel):
+    total_buoys: int
+    online_buoys: int
+    silent_buoys: int
+    buoys_with_low_battery: int
+    buoys_with_high_waves: int
+    total_active_alerts: int
+
 # --------------------------------------------------
 # 5. Database dependency
 # --------------------------------------------------
@@ -406,7 +414,57 @@ def get_alerts(db: Session = Depends(get_db)):
 
 
 # --------------------------------------------------
-# 11. Retrieve measurement history
+# 11. Fleet statistics
+# --------------------------------------------------
+
+@app.get("/stats", response_model=StatsOut)
+def get_stats(db: Session = Depends(get_db)):
+
+    latest, last_seen = get_fleet_data(db)
+
+    now = datetime.now(timezone.utc)
+
+    total_buoys = len(latest)
+
+    online_buoys = 0
+    silent_buoys = 0
+    low_battery_buoys = 0
+    high_waves_buoys = 0
+    total_active_alerts = 0
+
+    for buoy_id, measurement in latest.items():
+
+        alerts = analyze_buoy(
+            measurement,
+            last_seen[buoy_id],
+            now,
+        )
+
+        if "silent" in alerts:
+            silent_buoys += 1
+        else:
+            online_buoys += 1
+
+        if "low_battery" in alerts:
+            low_battery_buoys += 1
+
+        if "high_waves" in alerts:
+            high_waves_buoys += 1
+
+        total_active_alerts += len(alerts)
+
+    return StatsOut(
+        total_buoys=total_buoys,
+        online_buoys=online_buoys,
+        silent_buoys=silent_buoys,
+        buoys_with_low_battery=low_battery_buoys,
+        buoys_with_high_waves=high_waves_buoys,
+        total_active_alerts=total_active_alerts,
+    )
+
+
+# --------------------------------------------------
+# 12. Retrieve measurement history
 # --------------------------------------------------
 
 @app.get(
@@ -434,7 +492,7 @@ def get_history(
 
 
 # --------------------------------------------------
-# 12. Run the server
+# 13. Run the server
 # --------------------------------------------------
 
 if __name__ == "__main__":
