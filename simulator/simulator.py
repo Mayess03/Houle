@@ -1,9 +1,12 @@
-
+import os
+import requests
 import math
 import random
 import time
 from datetime import datetime, timezone
 
+API_URL = os.getenv("API_URL", "http://backend:8000")
+INTERVAL_SECONDS = int(os.getenv("INTERVAL_SECONDS", "5"))
 
 class BuoySimulator:
     def __init__(self, buoy_id, latitude, longitude, initial_battery=90.0):
@@ -73,19 +76,30 @@ def main():
         BuoySimulator("buoy-003", 36.90, 10.55, initial_battery=35.0),
     ]
 
-    print("Houle buoy simulator started. Press Ctrl+C to stop.")
+    print("Houle simulator started.")
 
     try:
         while True:
             for buoy in buoys:
                 measurement = buoy.generate_measurement()
-                print(measurement)
 
-            print("-" * 60)
-            time.sleep(5)
+                try:
+                    response = requests.post(
+                        f"{API_URL}/measurements",
+                        json=measurement,
+                        timeout=5,
+                    )
+                    response.raise_for_status()
+                    print(f"Sent: {measurement['measurement_id']} - {response.json()}")
+
+                except requests.RequestException as error:
+                    print(f"Failed to send measurement: {error}")
+
+            time.sleep(INTERVAL_SECONDS)
 
     except KeyboardInterrupt:
-        print("\nSimulator stopped.")
+        print("Simulator stopped.")
+
 
 
 if __name__ == "__main__":
