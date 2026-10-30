@@ -38,6 +38,18 @@ API_PORT = int(os.getenv("API_PORT", "8000"))
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is required")
 
+# Monitoring thresholds
+LOW_BATTERY_THRESHOLD = float(
+    os.getenv("LOW_BATTERY_THRESHOLD", "20")
+)
+
+HIGH_WAVE_THRESHOLD = float(
+    os.getenv("HIGH_WAVE_THRESHOLD", "4.0")
+)
+
+BUOY_SILENCE_SECONDS = int(
+    os.getenv("BUOY_SILENCE_SECONDS", "30")
+)
 
 # --------------------------------------------------
 # 2. Database connection
@@ -125,6 +137,21 @@ class MeasurementOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+class BuoyStatusOut(BaseModel):
+    buoy_id: str
+    status: str
+    last_seen_at: datetime
+    latest_measurement: MeasurementOut
+    alerts: list[str]
+
+
+class AlertOut(BaseModel):
+    buoy_id: str
+    type: str
+    severity: str
+    message: str
+    value: float
+    threshold: float
 
 # --------------------------------------------------
 # 5. Database dependency
@@ -216,8 +243,7 @@ def ingest_measurement(
 # 9. Retrieve buoy states
 # --------------------------------------------------
 
-@app.get("/buoys", response_model=list[MeasurementOut])
-def get_buoys(db: Session = Depends(get_db)):
+def get_fleet_data(db: Session):
 
     measurements = db.scalars(
         select(Measurement).order_by(
@@ -226,16 +252,161 @@ def get_buoys(db: Session = Depends(get_db)):
         )
     ).all()
 
-    latest = {}
+    latest_measurements = {}
+    last_seen = {}
 
     for measurement in measurements:
-        latest.setdefault(measurement.buoy_id, measurement)
 
-    return list(latest.values())
+        buoy_id = measurement.buoy_id
+
+        # Latest measurement based on measured_at
+        if buoy_id not in latest_measurements:
+            latest_measurements[buoy_id] = measurement
+
+        # Last communication based on received_at
+        if (
+            buoy_id not in last_seen
+            or measurement.received_at > last_seen[buoy_id]
+        ):
+            last_seen[buoy_id] = measurement.received_at
+
+    return latest_measurements, last_seen
+
+
+def analyze_buoy(
+    measurement: Measurement,
+    last_seen: datetime,
+    now: datetime,
+):
+
+    alerts = []
+
+    # 1. Detect silent buoy
+    silence_duration = (
+        now - last_seen
+    ).total_seconds()
+
+    if silence_duration > BUOY_SILENCE_SECONDS:
+        alerts.append("silent")
+
+    # 2. Detect low battery
+    if measurement.battery_level < LOW_BATTERY_THRESHOLD:
+        alerts.append("low_battery")
+
+    # 3. Detect high waves
+    if measurement.wave_height > HIGH_WAVE_THRESHOLD:
+        alerts.append("high_waves")
+
+    return alerts
+
+
+@app.get("/buoys", response_model=list[BuoyStatusOut])
+def get_buoys(db: Session = Depends(get_db)):
+
+    latest, last_seen = get_fleet_data(db)
+
+    now = datetime.now(timezone.utc)
+
+    results = []
+
+    for buoy_id, measurement in latest.items():
+
+        alerts = analyze_buoy(
+            measurement,
+            last_seen[buoy_id],
+            now,
+        )
+
+        status = (
+            "silent"
+            if "silent" in alerts
+            else "online"
+        )
+
+        results.append(
+            BuoyStatusOut(
+                buoy_id=buoy_id,
+                status=status,
+                last_seen_at=last_seen[buoy_id],
+                latest_measurement=measurement,
+                alerts=alerts,
+            )
+        )
+
+    return results
+
+# --------------------------------------------------
+# 10. Active alerts
+# --------------------------------------------------
+
+@app.get("/alerts", response_model=list[AlertOut])
+def get_alerts(db: Session = Depends(get_db)):
+
+    latest, last_seen = get_fleet_data(db)
+
+    now = datetime.now(timezone.utc)
+
+    alerts = []
+
+    for buoy_id, measurement in latest.items():
+
+        detected = analyze_buoy(
+            measurement,
+            last_seen[buoy_id],
+            now,
+        )
+
+        # Silent buoy
+        if "silent" in detected:
+
+            silence_duration = (
+                now - last_seen[buoy_id]
+            ).total_seconds()
+
+            alerts.append(
+                AlertOut(
+                    buoy_id=buoy_id,
+                    type="silent",
+                    severity="critical",
+                    message="Buoy stopped reporting measurements",
+                    value=round(silence_duration, 2),
+                    threshold=BUOY_SILENCE_SECONDS,
+                )
+            )
+
+        # Low battery
+        if "low_battery" in detected:
+
+            alerts.append(
+                AlertOut(
+                    buoy_id=buoy_id,
+                    type="low_battery",
+                    severity="warning",
+                    message="Buoy battery level is too low",
+                    value=measurement.battery_level,
+                    threshold=LOW_BATTERY_THRESHOLD,
+                )
+            )
+
+        # High waves
+        if "high_waves" in detected:
+
+            alerts.append(
+                AlertOut(
+                    buoy_id=buoy_id,
+                    type="high_waves",
+                    severity="warning",
+                    message="Wave height exceeds the configured threshold",
+                    value=measurement.wave_height,
+                    threshold=HIGH_WAVE_THRESHOLD,
+                )
+            )
+
+    return alerts
 
 
 # --------------------------------------------------
-# 10. Retrieve measurement history
+# 11. Retrieve measurement history
 # --------------------------------------------------
 
 @app.get(
@@ -263,7 +434,7 @@ def get_history(
 
 
 # --------------------------------------------------
-# 11. Run the server
+# 12. Run the server
 # --------------------------------------------------
 
 if __name__ == "__main__":

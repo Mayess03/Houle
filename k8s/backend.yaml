@@ -26,13 +26,20 @@ spec:
     spec:
       containers:
         - name: backend
-          image: mayess03/houle-backend:0.1.0
+          image: mayess03/houle-backend:0.1.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           envFrom:
             - secretRef:
                 name: backend-secret
+          env:
+            - name: LOW_BATTERY_THRESHOLD
+              value: "20"
+            - name: HIGH_WAVE_THRESHOLD
+              value: "4.0"
+            - name: BUOY_SILENCE_SECONDS
+              value: "30"
           resources:
             requests:
               cpu: 100m

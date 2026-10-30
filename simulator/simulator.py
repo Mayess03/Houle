@@ -71,7 +71,7 @@ def main():
     buoys = [
         BuoySimulator("buoy-001", 36.85, 10.50),
         BuoySimulator("buoy-002", 36.87, 10.53, initial_battery=65.0),
-        BuoySimulator("buoy-003", 36.90, 10.55, initial_battery=35.0),
+        BuoySimulator("buoy-003", 36.90, 10.55, initial_battery=11.0),
     ]
 
     print("Houle simulator started.")

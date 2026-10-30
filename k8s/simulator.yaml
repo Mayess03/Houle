@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: simulator
-          image: mayess03/houle-simulator:0.1.0
+          image: mayess03/houle-simulator:0.1.1
           imagePullPolicy: IfNotPresent
           env:
             - name: API_URL

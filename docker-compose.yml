@@ -1,12 +1,12 @@
 services:
   backend:
-    image: mayess03/houle-backend:0.1.0
+    image: mayess03/houle-backend:0.1.1
     build:
       context: ./backend
       dockerfile: Dockerfile
 
   simulator:
-    image: mayess03/houle-simulator:0.1.0
+    image: mayess03/houle-simulator:0.1.1
     build:
       context: ./simulator
       dockerfile: Dockerfile
