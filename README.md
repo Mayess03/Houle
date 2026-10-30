@@ -140,7 +140,7 @@ kubectl delete namespace houle   # removes every resource, including the databas
 minikube stop
 ```
 
-## Known limitations and next steps
+## Known limitations
 
 Not implemented in this version:
 
