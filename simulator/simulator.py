@@ -3,6 +3,7 @@ import requests
 import math
 import random
 import time
+import uuid
 from datetime import datetime, timezone
 
 API_URL = os.getenv("API_URL", "http://backend:8000")
@@ -22,7 +23,6 @@ class BuoySimulator:
 
         self.start_time = time.monotonic()
         self.last_update = self.start_time
-        self.measurement_number = 0
 
     def generate_measurement(self):
         now = time.monotonic()
@@ -56,10 +56,8 @@ class BuoySimulator:
         self.latitude = self.anchor_latitude + random.uniform(-0.0002, 0.0002)
         self.longitude = self.anchor_longitude + random.uniform(-0.0002, 0.0002)
 
-        self.measurement_number += 1
-
         return {
-            "measurement_id": f"{self.buoy_id}-{self.measurement_number}",
+            "measurement_id": str(uuid.uuid4()),
             "buoy_id": self.buoy_id,
             "measured_at": datetime.now(timezone.utc).isoformat(),
             "wave_height": round(self.wave_height, 2),
